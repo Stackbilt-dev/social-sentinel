@@ -1,0 +1,16 @@
+name = "social-sentinel"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+AIDOCTOR_URL = "https://ai-doctor.kurt-5be.workers.dev"
+
+[[kv_namespaces]]
+binding = "TENANT_CONFIG"
+id = "placeholder-create-with-wrangler"
+
+[ai]
+binding = "AI"
