@@ -1,3 +1,7 @@
+<div align="center">
+<img src="assets/hero.png" alt="Social Sentinel — privacy-first sentiment monitoring" width="100%" />
+</div>
+
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6.svg)](https://www.typescriptlang.org/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020.svg)](https://workers.cloudflare.com/)
