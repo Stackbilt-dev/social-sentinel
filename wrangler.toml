@@ -6,10 +6,13 @@ compatibility_date = "2024-01-01"
 crons = ["*/15 * * * *"]
 
 [vars]
-AIDOCTOR_URL = "https://ai-doctor.kurt-5be.workers.dev"
+# Set this to your own ingestion/metrics endpoint URL
+AIDOCTOR_URL = "https://your-ingestion-endpoint.example.com"
 
 [[kv_namespaces]]
 binding = "TENANT_CONFIG"
+# Create a KV namespace with: wrangler kv:namespace create TENANT_CONFIG
+# Then replace this placeholder with the returned namespace ID
 id = "placeholder-create-with-wrangler"
 
 [ai]
