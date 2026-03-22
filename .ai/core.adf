@@ -1,0 +1,39 @@
+---
+version: 1
+name: social-sentinel-core
+description: Core governance rules for Social Sentinel
+---
+
+# Social Sentinel — Core Governance
+
+## Non-Negotiable Rules
+
+### PII Redaction
+PII redaction is non-negotiable. All text content from social media platforms MUST pass through
+the PIIRedactor (`src/pii/redactor.ts`) before any processing, transmission, or logging.
+Never bypass, weaken, or short-circuit the PII redaction pipeline. This is a privacy-first system.
+
+### Platform Adapter Contract
+All platform adapters MUST implement the `PlatformAdapter` interface defined in `src/adapters/types.ts`.
+Adapters return `SocialMention[]` with platform-specific IDs, timestamps, and text content.
+Do not introduce alternative adapter patterns or bypass the interface contract.
+
+### Error Isolation
+Adapter failures MUST NOT cascade. A failure in one adapter (e.g., Twitter API down) must not
+prevent other adapters or other tenants from processing. Errors are caught, logged, and the
+pipeline continues with partial results.
+
+### Multi-Tenant via KV
+Tenant configuration lives in Cloudflare KV (`TENANT_CONFIG` namespace). Never hardcode tenant
+configuration, API keys, or credentials. Each tenant is independently configured and processed.
+
+### Deterministic Event IDs
+Event IDs MUST follow the format `ss-{platform}-{platform_id}[-suffix]`. This enables
+deduplication at the ingestion layer. Do not use random or timestamp-based IDs for events.
+
+## Principles
+
+- **Privacy over convenience** — When in doubt, redact more, not less.
+- **Fail open for other tenants** — One tenant's failure must not affect another.
+- **No long-term storage** — Social Sentinel processes data in-flight. It does not persist mentions.
+- **Structured logging only** — Use `src/utils/logging.ts`. No `console.log` with raw data.

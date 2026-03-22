@@ -1,6 +1,18 @@
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6.svg)](https://www.typescriptlang.org/)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020.svg)](https://workers.cloudflare.com/)
+
 # Social Sentinel
 
-A Cloudflare Worker that monitors social media platforms for brand sentiment and feeds structured metrics into AiDoctor.
+Monitor Twitter/X, Google Reviews, and Facebook for brand mentions. PII redacted before transmission. AI-powered sentiment scoring. Multi-tenant. Runs on Cloudflare Workers.
+
+## Why Social Sentinel?
+
+- **Privacy-first** — All text is scrubbed for PII (emails, phones, addresses, SSNs) before it leaves the worker. Nothing sensitive is transmitted or stored.
+- **Real-time** — Cron-triggered every 15 minutes. Brand mentions are captured and scored continuously.
+- **Multi-platform** — Twitter/X, Google Reviews, and Facebook out of the box. Adding a new platform is one adapter file.
+- **Zero-knowledge** — No long-term data storage. Mentions are processed in-flight and forwarded as structured metric events to your ingestion endpoint.
+- **Multi-tenant** — Tenant configs live in Cloudflare KV. Each tenant gets independent platform credentials and processing.
 
 ## Architecture
 
@@ -28,16 +40,8 @@ A Cloudflare Worker that monitors social media platforms for brand sentiment and
 │              └───────┬────────┘                                 │
 └──────────────────────┼──────────────────────────────────────────┘
                        ▼
-              POST /ingest/batch → AiDoctor
+              POST /ingest/batch → Your HTTP Endpoint
 ```
-
-## Features
-
-- **Multi-platform monitoring** - Twitter/X, Google Reviews, Facebook
-- **PII redaction** - Scrubs emails, phones, addresses before sending to AiDoctor
-- **Sentiment analysis** - Workers AI-powered sentiment scoring (-1 to +1)
-- **Automatic deduplication** - Deterministic event IDs for AiDoctor idempotency
-- **Cron-triggered** - Runs every 15 minutes
 
 ## Getting Started
 
@@ -110,17 +114,17 @@ npm run deploy
 
 ## Metrics Generated
 
-| Metric Name | Unit | Good Direction | Description |
-|-------------|------|----------------|-------------|
-| `twitter_sentiment` | score | up | Sentiment score (-1 to +1) |
-| `twitter_mentions` | count | neutral | Volume of mentions |
-| `google_reviews_sentiment` | score | up | Review sentiment |
-| `google_reviews_rating` | score | up | Star rating (1-5) |
-| `google_reviews_mentions` | count | neutral | Review count |
-| `facebook_sentiment` | score | up | Post/comment sentiment |
-| `facebook_mentions` | count | neutral | Mention volume |
+| Metric Name | Unit | Description |
+|---|---|---|
+| `twitter_sentiment` | score (-1 to +1) | Tweet sentiment |
+| `twitter_mentions` | count | Volume of mentions |
+| `google_reviews_sentiment` | score (-1 to +1) | Review sentiment |
+| `google_reviews_rating` | score (1-5) | Star rating |
+| `google_reviews_mentions` | count | Review count |
+| `facebook_sentiment` | score (-1 to +1) | Post/comment sentiment |
+| `facebook_mentions` | count | Mention volume |
 
-All metrics auto-register in AiDoctor via the schema system (ADR-017).
+Metrics are sent as structured events to your configured ingestion endpoint with deterministic IDs (`ss-{platform}-{id}`) for deduplication.
 
 ## API Keys Setup
 
@@ -144,6 +148,15 @@ All metrics auto-register in AiDoctor via the schema system (ADR-017).
 2. Create an app with pages_read_engagement permission
 3. Generate a Page Access Token
 4. Add to tenant config as `pageAccessToken` and `pageId`
+
+## Adding a New Platform Adapter
+
+1. Create a new file in `src/adapters/` (e.g., `linkedin.ts`)
+2. Implement the `PlatformAdapter` interface from `src/adapters/types.ts`
+3. Add the platform to the union type in `SocialMention["platform"]`
+4. Add config schema to `src/config.ts`
+5. Wire up the adapter in `getEnabledAdapters()` in `src/index.ts`
+6. Create tests in `tests/adapters/`
 
 ## Testing
 
@@ -175,13 +188,26 @@ social-sentinel/
 │   │   └── analyzer.ts       # Workers AI sentiment analysis
 │   ├── pii/
 │   │   └── redactor.ts       # PII scrubbing layer
-│   └── batch/
-│       └── builder.ts        # AiDoctor event builder
+│   ├── batch/
+│   │   └── builder.ts        # Event builder + batching
+│   └── utils/
+│       └── logging.ts        # Structured logging utilities
 ├── tests/                    # Test files mirror src structure
 ├── wrangler.toml
 └── package.json
 ```
 
+## Security
+
+- **Authenticated triggers** — `POST /trigger` requires `Authorization: Bearer <token>`. Disabled by default if `TRIGGER_API_KEY` is not set.
+- **PII redaction** — All mention text is scrubbed before processing or transmission.
+- **Sanitized logging** — Errors are logged as structured JSON without stack traces or sensitive data.
+- **PII audit trail** — Structured warnings logged when PII is detected, enabling GDPR/CCPA compliance auditing.
+
 ## License
 
 MIT
+
+---
+
+Built by [Stackbilt](https://stackbilt.dev)

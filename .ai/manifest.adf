@@ -1,0 +1,8 @@
+---
+version: 1
+name: social-sentinel
+description: AI governance for the Social Sentinel project
+---
+
+always:
+  - core.adf
