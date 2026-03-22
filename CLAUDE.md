@@ -139,11 +139,45 @@ Tests use Vitest with mocks for external dependencies (Workers AI, KV, platform 
 - Use `vi.fn()` for assertions on adapter behavior
 - Coverage excludes `src/index.ts` and `src/env.ts` (entry points)
 
+## Security Features
+
+Social Sentinel implements several security measures validated through zero-trust red team review:
+
+### Authentication
+
+The `/trigger` endpoint requires authentication:
+- Set `TRIGGER_API_KEY` secret to enable manual triggers
+- If unset, the endpoint returns 403 (disabled by default)
+- Requires `Authorization: Bearer <token>` header
+
+```bash
+# Enable manual triggers
+wrangler secret put TRIGGER_API_KEY
+
+# Usage
+curl -X POST https://your-worker.workers.dev/trigger \
+  -H "Authorization: Bearer YOUR_SECRET_KEY"
+```
+
+### Sanitized Error Logging
+
+All errors are logged through `src/utils/logging.ts` utilities:
+- `logError(context, error, metadata?)` - Structured JSON logs without stack traces
+- Error messages sanitized to prevent information disclosure
+- Metadata includes non-sensitive context (adapter name, action taken)
+
+### PII Audit Trail
+
+When PII is detected during redaction:
+- Structured warning logged via `logPIIDetection()`
+- Includes tenant ID, platform, mention ID, and timestamp
+- Enables compliance audits and GDPR/CCPA tracking
+
 ## Deployment Notes
 
 - Worker runs on cron schedule defined in `wrangler.toml` (every 15 minutes)
-- Manual trigger available via `POST /trigger` for testing
-- Health check available at `GET /health`
+- Manual trigger available via `POST /trigger` (requires authentication)
+- Health check available at `GET /health` (public, no auth required)
 - Uses Cloudflare Workers AI binding (must be enabled on paid plan)
 - KV reads are eventually consistent - config changes may take time to propagate
 - Each cron invocation processes all enabled tenants concurrently

@@ -7,6 +7,7 @@ import { TwitterAdapter } from "./adapters/twitter";
 import { GoogleReviewsAdapter } from "./adapters/google-reviews";
 import { FacebookAdapter } from "./adapters/facebook";
 import type { PlatformAdapter, SocialMention, CleanMention } from "./adapters/types";
+import { logError, logPIIDetection } from "./utils/logging";
 
 /**
  * Get enabled adapters for a tenant based on their configuration
@@ -30,8 +31,17 @@ function getEnabledAdapters(config: TenantConfig): PlatformAdapter[] {
 /**
  * Prepare a mention for ingestion by redacting PII
  */
-function prepareForIngest(mention: SocialMention, redactor: PIIRedactor): CleanMention {
+function prepareForIngest(
+  mention: SocialMention,
+  redactor: PIIRedactor,
+  tenantId: string
+): CleanMention {
   const { redacted, piiDetected } = redactor.redact(mention.text);
+
+  // Log PII detection for compliance audit trail
+  if (piiDetected) {
+    logPIIDetection(tenantId, mention.platform, mention.id);
+  }
 
   return {
     id: mention.id,
@@ -101,7 +111,10 @@ async function processTenant(tenant: TenantConfig, env: Env): Promise<void> {
       console.log(`Got ${mentions.length} mentions from ${adapter.name}`);
       allMentions.push(...mentions);
     } catch (error) {
-      console.error(`Adapter ${adapter.name} failed for ${tenant.tenantId}:`, error);
+      logError("adapter_fetch_failed", error, {
+        adapter: adapter.name,
+        tenantId: tenant.tenantId,
+      });
       // Continue with other adapters
     }
   }
@@ -112,7 +125,7 @@ async function processTenant(tenant: TenantConfig, env: Env): Promise<void> {
   }
 
   // 2. Redact PII from all mentions
-  const cleanMentions = allMentions.map((m) => prepareForIngest(m, redactor));
+  const cleanMentions = allMentions.map((m) => prepareForIngest(m, redactor, tenant.tenantId));
   console.log(`Redacted PII from ${cleanMentions.length} mentions`);
 
   // 3. Analyze sentiment for all mentions
@@ -154,12 +167,14 @@ export default {
       for (const tenant of tenants) {
         ctx.waitUntil(
           processTenant(tenant, env).catch((error) => {
-            console.error(`Failed to process tenant ${tenant.tenantId}:`, error);
+            logError("tenant_processing_failed", error, {
+              tenantId: tenant.tenantId,
+            });
           })
         );
       }
     } catch (error) {
-      console.error("Social Sentinel cron failed:", error);
+      logError("cron_failed", error);
       throw error;
     }
   },
@@ -170,25 +185,62 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    // Health check
+    // Health check - public endpoint
     if (url.pathname === "/health") {
       return new Response(JSON.stringify({ status: "ok", timestamp: Date.now() }), {
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // Manual trigger (for testing)
+    // Manual trigger - requires authentication
     if (url.pathname === "/trigger" && request.method === "POST") {
-      const tenants = await loadTenantConfigs(env.TENANT_CONFIG);
-
-      for (const tenant of tenants) {
-        ctx.waitUntil(processTenant(tenant, env));
+      // Check if trigger endpoint is enabled
+      if (!env.TRIGGER_API_KEY) {
+        return new Response(
+          JSON.stringify({ error: "Manual trigger is disabled" }),
+          {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
       }
 
-      return new Response(
-        JSON.stringify({ message: `Triggered processing for ${tenants.length} tenants` }),
-        { headers: { "Content-Type": "application/json" } }
-      );
+      // Validate API key
+      const authHeader = request.headers.get("Authorization");
+      const expectedAuth = `Bearer ${env.TRIGGER_API_KEY}`;
+
+      if (authHeader !== expectedAuth) {
+        return new Response(
+          JSON.stringify({ error: "Unauthorized" }),
+          {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      // Process tenants
+      try {
+        const tenants = await loadTenantConfigs(env.TENANT_CONFIG);
+
+        for (const tenant of tenants) {
+          ctx.waitUntil(processTenant(tenant, env));
+        }
+
+        return new Response(
+          JSON.stringify({ message: `Triggered processing for ${tenants.length} tenants` }),
+          { headers: { "Content-Type": "application/json" } }
+        );
+      } catch (error) {
+        logError("manual_trigger_failed", error);
+        return new Response(
+          JSON.stringify({ error: "Failed to trigger processing" }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
     }
 
     return new Response("Not Found", { status: 404 });

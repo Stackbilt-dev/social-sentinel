@@ -7,4 +7,7 @@ export interface Env {
 
   // AiDoctor backend URL
   AIDOCTOR_URL: string;
+
+  // API key for manual trigger endpoint (optional - if not set, /trigger is disabled)
+  TRIGGER_API_KEY?: string;
 }
