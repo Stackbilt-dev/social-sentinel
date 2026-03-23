@@ -29,7 +29,7 @@ function getEnabledAdapters(config: TenantConfig): PlatformAdapter[] {
 }
 
 /**
- * Prepare a mention for ingestion by redacting PII
+ * Prepare a mention for the ingestion endpoint by redacting PII
  */
 function prepareForIngest(
   mention: SocialMention,
@@ -55,7 +55,7 @@ function prepareForIngest(
 }
 
 /**
- * Send a batch of events to AiDoctor
+ * Send a batch of events to the downstream ingestion endpoint
  */
 async function sendBatch(
   events: Array<{
@@ -67,9 +67,9 @@ async function sendBatch(
     timestamp: number;
     meta?: Record<string, unknown>;
   }>,
-  aidoctorUrl: string
+  ingestUrl: string
 ): Promise<void> {
-  const response = await fetch(`${aidoctorUrl}/ingest/batch`, {
+  const response = await fetch(`${ingestUrl}/ingest/batch`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -79,11 +79,11 @@ async function sendBatch(
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`AiDoctor batch ingest failed: ${response.status} ${error}`);
+    throw new Error(`Batch ingest failed: ${response.status} ${error}`);
   }
 
   const result = await response.json() as { queued: number; failed: number };
-  console.log(`Sent batch to AiDoctor: ${result.queued} queued, ${result.failed} failed`);
+  console.log(`Sent batch to ingestion endpoint: ${result.queued} queued, ${result.failed} failed`);
 }
 
 /**
@@ -132,17 +132,17 @@ async function processTenant(tenant: TenantConfig, env: Env): Promise<void> {
   const sentiments = await analyzer.analyzeBatch(cleanMentions.map((m) => m.text));
   console.log(`Analyzed sentiment for ${sentiments.length} mentions`);
 
-  // 4. Build AiDoctor events
+  // 4. Build ingest events
   for (let i = 0; i < cleanMentions.length; i++) {
     builder.addMention(cleanMentions[i], sentiments[i], tenant.tenantId, tenant.stage);
   }
 
-  // 5. Send batches to AiDoctor
+  // 5. Send batches to ingestion endpoint
   const batches = builder.getBatches(100);
-  console.log(`Sending ${batches.length} batches to AiDoctor`);
+  console.log(`Sending ${batches.length} batches to ingestion endpoint`);
 
   for (const batch of batches) {
-    await sendBatch(batch, env.AIDOCTOR_URL);
+    await sendBatch(batch, env.INGEST_ENDPOINT_URL);
   }
 
   console.log(`Completed processing for tenant ${tenant.tenantId}`);

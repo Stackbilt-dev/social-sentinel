@@ -1,14 +1,14 @@
 /**
  * Batch Builder
  *
- * Builds AiDoctor-compatible events from processed social mentions
+ * Builds ingest-compatible events from processed social mentions
  * and sentiment results. Handles event ID generation for deduplication.
  */
 
 import type { CleanMention } from "../adapters/types";
 import type { SentimentResult } from "../sentiment/analyzer";
 
-/** AiDoctor ingest event format */
+/** Ingest event format for downstream ingestion API */
 export interface IngestEvent {
   eventId: string;
   tenantId: string;
@@ -20,11 +20,11 @@ export interface IngestEvent {
 }
 
 /**
- * Generate deterministic event ID for AiDoctor deduplication
+ * Generate deterministic event ID for downstream deduplication
  * Format: ss-{platform}-{platform_id}
  *
  * This ensures the same mention processed twice will have the same eventId,
- * allowing AiDoctor's 24-hour deduplication to handle it.
+ * allowing the ingestion endpoint's 24-hour deduplication to handle it.
  */
 export function generateEventId(mention: CleanMention, suffix?: string): string {
   const base = `ss-${mention.platform}-${mention.id}`;

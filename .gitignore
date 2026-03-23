@@ -43,3 +43,7 @@ wrangler.toml.local
 *token*
 *key*.txt
 credentials.json
+
+# AI/LLM artifacts
+CLAUDE.md
+.ai/

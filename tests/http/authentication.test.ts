@@ -12,7 +12,7 @@ describe("HTTP endpoint authentication", () => {
   const createMockEnv = (triggerApiKey?: string) => ({
     TENANT_CONFIG: {} as KVNamespace,
     AI: {} as Ai,
-    AIDOCTOR_URL: "https://test.example.com",
+    INGEST_ENDPOINT_URL: "https://test.example.com",
     TRIGGER_API_KEY: triggerApiKey,
   });
 

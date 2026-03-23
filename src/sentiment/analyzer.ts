@@ -10,7 +10,7 @@ export interface SentimentResult {
   label: "positive" | "negative";
   /** Confidence score from the model (0.0 to 1.0) */
   score: number;
-  /** Normalized score for AiDoctor (-1.0 to +1.0) */
+  /** Normalized score for ingestion (-1.0 to +1.0) */
   normalizedScore: number;
 }
 

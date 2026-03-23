@@ -3,7 +3,7 @@
  *
  * Fetches reviews for a business using Google Places API.
  * Note: The Places API only returns 5 most recent reviews,
- * so deduplication is handled via AiDoctor's eventId system.
+ * so deduplication is handled via the ingestion endpoint's eventId system.
  */
 
 import type { PlatformAdapter, SocialMention } from "./types";

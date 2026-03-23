@@ -6,8 +6,8 @@ compatibility_date = "2024-01-01"
 crons = ["*/15 * * * *"]
 
 [vars]
-# Set this to your own ingestion/metrics endpoint URL
-AIDOCTOR_URL = "https://your-ingestion-endpoint.example.com"
+# Set this to your downstream ingestion endpoint URL
+INGEST_ENDPOINT_URL = "https://your-ingestion-endpoint.example.com"
 
 [[kv_namespaces]]
 binding = "TENANT_CONFIG"

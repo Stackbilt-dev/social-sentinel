@@ -2,8 +2,8 @@
  * PII Redaction Layer
  *
  * Scrubs personally identifiable information from social media text
- * before sending to AiDoctor. Uses regex patterns to detect and replace
- * common PII types.
+ * before sending to the downstream ingestion endpoint. Uses regex patterns
+ * to detect and replace common PII types.
  */
 
 interface PIIPattern {

@@ -13,7 +13,7 @@ export interface SocialMention {
   /** Raw text content of the mention/review */
   text: string;
 
-  /** Author name (will be redacted before sending to AiDoctor) */
+  /** Author name (will be redacted before sending to ingestion endpoint) */
   author?: string;
 
   /** Unix timestamp in milliseconds */

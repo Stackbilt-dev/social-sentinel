@@ -1,7 +1,13 @@
 {
   "name": "social-sentinel",
   "version": "1.0.0",
-  "description": "Social media sentiment monitoring worker for AiDoctor",
+  "description": "Social media sentiment monitoring worker for Cloudflare Workers",
+  "license": "MIT",
+  "author": "Stackbilt LLC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Stackbilt-dev/social-sentinel.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
