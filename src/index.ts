@@ -11,6 +11,7 @@ import { logError, logPIIDetection } from "./utils/logging";
 import { handlePublishRoutes } from "./routes";
 import { BlueskyPublisher } from "./publishers/bluesky";
 import type { Platform } from "./publishers/types";
+import { renderDashboard } from "./dashboard";
 
 // ─── Monitoring Pipeline (existing) ──────────────────────────
 
@@ -293,6 +294,13 @@ export default {
    */
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    // Dashboard — serves the control center UI
+    if (url.pathname === "/dashboard") {
+      return new Response(renderDashboard(), {
+        headers: { "Content-Type": "text/html;charset=utf-8" },
+      });
+    }
 
     // Health check — public endpoint
     if (url.pathname === "/health") {
