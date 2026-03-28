@@ -604,6 +604,143 @@ export function renderDashboard(): string {
     }
 
     /* ── Feed ────────────────────────────── */
+    /* ── Listener ─────────────────────────── */
+    .stat-card {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.6rem 0.85rem;
+      min-width: 100px;
+    }
+
+    .stat-label {
+      font-size: 9px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.2rem;
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .stat-value.positive { color: var(--green); }
+    .stat-value.negative { color: var(--red); }
+    .stat-value.neutral { color: var(--text-dim); }
+
+    .mention-item {
+      padding: 0.65rem 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 0.75rem;
+      align-items: flex-start;
+    }
+
+    .mention-item:last-child { border-bottom: none; }
+
+    .mention-sentiment {
+      min-width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .mention-sentiment.pos {
+      background: rgba(45, 212, 160, 0.08);
+      border: 1px solid rgba(45, 212, 160, 0.15);
+    }
+
+    .mention-sentiment.neg {
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.15);
+    }
+
+    .mention-content { flex: 1; min-width: 0; }
+
+    .mention-text {
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.5;
+      word-break: break-word;
+      margin-bottom: 0.3rem;
+    }
+
+    .mention-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 10px;
+      color: var(--text-dim);
+      flex-wrap: wrap;
+    }
+
+    .mention-actions {
+      display: flex;
+      gap: 0.3rem;
+      flex-shrink: 0;
+    }
+
+    .mention-btn {
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-size: 9px;
+      font-family: var(--mono);
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-dim);
+      transition: all 0.15s;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .mention-btn:hover {
+      border-color: var(--border-bright);
+      color: var(--text);
+    }
+
+    .mention-btn.flagged {
+      background: rgba(245, 166, 35, 0.1);
+      border-color: rgba(245, 166, 35, 0.25);
+      color: var(--amber);
+    }
+
+    .mention-btn.reviewed {
+      background: rgba(45, 212, 160, 0.06);
+      border-color: rgba(45, 212, 160, 0.15);
+      color: var(--green);
+    }
+
+    .pii-tag {
+      display: inline-block;
+      padding: 0.05rem 0.3rem;
+      border-radius: 3px;
+      font-size: 8px;
+      background: rgba(245, 166, 35, 0.1);
+      border: 1px solid rgba(245, 166, 35, 0.2);
+      color: var(--amber);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .sentiment-bar {
+      display: inline-block;
+      height: 4px;
+      border-radius: 2px;
+      min-width: 30px;
+      max-width: 60px;
+    }
+
+    .sentiment-bar.pos { background: var(--green); }
+    .sentiment-bar.neg { background: var(--red); }
+
     .feed-item {
       padding: 0.75rem 0;
       border-bottom: 1px solid var(--border);
@@ -795,6 +932,31 @@ export function renderDashboard(): string {
         </div>
       </div>
 
+      <!-- Listener Stats -->
+      <div class="card full-width" style="animation-delay:0.12s">
+        <div class="card-header">
+          <span class="card-label">Brand Listener</span>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <select id="mentionFilter" onchange="loadMentions()" style="padding:0.2rem 0.4rem;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:10px;outline:none">
+              <option value="">All</option>
+              <option value="negative">Negative</option>
+              <option value="positive">Positive</option>
+            </select>
+            <button class="btn btn-secondary" style="font-size:10px;padding:0.2rem 0.5rem" onclick="loadMentions()">Refresh</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <!-- Stats bar -->
+          <div id="listenerStats" style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+            <div class="loading"><div class="spinner"></div> Loading listener stats...</div>
+          </div>
+          <!-- Mentions list -->
+          <div id="mentionsBody">
+            <div class="loading"><div class="spinner"></div> Loading mentions...</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Feed -->
       <div class="card full-width">
         <div class="card-header">
@@ -876,8 +1038,10 @@ export function renderDashboard(): string {
     function boot() {
       loadQueue();
       loadHistory();
+      loadMentionStats();
+      loadMentions();
       loadFeed();
-      refreshInterval = setInterval(loadQueue, 30000);
+      refreshInterval = setInterval(() => { loadQueue(); loadMentionStats(); }, 30000);
     }
 
     // ─── Compose ────────────────────────────
@@ -1073,6 +1237,89 @@ export function renderDashboard(): string {
       } catch {
         document.getElementById('feedBody').innerHTML = '<div class="empty-state">Failed to load feed</div>';
       }
+    }
+
+    // ─── Listener ────────────────────────────
+    async function loadMentionStats() {
+      try {
+        const data = await api('/mentions/stats');
+        const el = document.getElementById('listenerStats');
+        if (!el) return;
+
+        const posData = data.sentiment?.find(s => s.sentiment_label === 'positive');
+        const negData = data.sentiment?.find(s => s.sentiment_label === 'negative');
+        const posCount = posData?.count ?? 0;
+        const negCount = negData?.count ?? 0;
+        const avgScore = data.last_24h?.avg_score ?? 0;
+        const scoreClass = avgScore > 0.1 ? 'positive' : avgScore < -0.1 ? 'negative' : 'neutral';
+
+        el.innerHTML =
+          '<div class="stat-card"><div class="stat-label">Total Mentions</div><div class="stat-value" style="color:var(--accent-glow)">' + (data.total || 0) + '</div></div>' +
+          '<div class="stat-card"><div class="stat-label">Positive</div><div class="stat-value positive">' + posCount + '</div></div>' +
+          '<div class="stat-card"><div class="stat-label">Negative</div><div class="stat-value negative">' + negCount + '</div></div>' +
+          '<div class="stat-card"><div class="stat-label">Flagged</div><div class="stat-value" style="color:var(--amber)">' + (data.flagged || 0) + '</div></div>' +
+          '<div class="stat-card"><div class="stat-label">Unreviewed</div><div class="stat-value" style="color:var(--text)">' + (data.unreviewed || 0) + '</div></div>' +
+          '<div class="stat-card"><div class="stat-label">24h Sentiment</div><div class="stat-value ' + scoreClass + '">' + (avgScore > 0 ? '+' : '') + avgScore.toFixed(2) + '</div></div>';
+      } catch {
+        const el = document.getElementById('listenerStats');
+        if (el) el.innerHTML = '<div class="empty-state">Failed to load stats</div>';
+      }
+    }
+
+    async function loadMentions() {
+      try {
+        const filter = document.getElementById('mentionFilter')?.value || '';
+        const params = filter ? '?sentiment=' + filter : '';
+        const data = await api('/mentions' + params);
+        const el = document.getElementById('mentionsBody');
+        if (!el) return;
+
+        if (!data.items || data.items.length === 0) {
+          el.innerHTML = '<div class="empty-state">No mentions detected yet. Configure platform adapters to start listening.</div>';
+          return;
+        }
+
+        el.innerHTML = data.items.map(item => {
+          const isPos = item.sentiment_label === 'positive';
+          const score = Math.abs(item.sentiment_normalized || 0);
+          const barWidth = Math.max(30, Math.min(60, score * 60));
+          const piiTags = item.pii_detected ? JSON.parse(item.pii_detected).map(t => '<span class="pii-tag">' + esc(t) + '</span>').join(' ') : '';
+
+          return '<div class="mention-item">' +
+            '<div class="mention-sentiment ' + (isPos ? 'pos' : 'neg') + '">' + (isPos ? '+' : '&minus;') + '</div>' +
+            '<div class="mention-content">' +
+              '<div class="mention-text">' + esc(item.text) + '</div>' +
+              '<div class="mention-meta">' +
+                '<span class="status-badge status-' + (isPos ? 'published' : 'failed') + '">' + item.sentiment_label + '</span>' +
+                '<span class="sentiment-bar ' + (isPos ? 'pos' : 'neg') + '" style="width:' + barWidth + 'px"></span>' +
+                '<span>' + item.platform + '</span>' +
+                (item.url ? '<a class="text-link" href="' + esc(item.url) + '" target="_blank" rel="noopener">Source</a>' : '') +
+                '<span>' + fmtTime(item.detected_at || item.created_at) + '</span>' +
+                (piiTags ? ' ' + piiTags : '') +
+              '</div>' +
+            '</div>' +
+            '<div class="mention-actions">' +
+              '<button class="mention-btn' + (item.flagged ? ' flagged' : '') + '" onclick="flagMention(\\'' + item.id + '\\',' + (item.flagged ? 'false' : 'true') + ')" title="' + (item.flagged ? 'Unflag' : 'Flag') + '">' + (item.flagged ? '&#9873;' : '&#9872;') + '</button>' +
+              '<button class="mention-btn' + (item.reviewed ? ' reviewed' : '') + '" onclick="reviewMention(\\'' + item.id + '\\')" title="Mark reviewed"' + (item.reviewed ? ' disabled' : '') + '>&#10003;</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      } catch {
+        const el = document.getElementById('mentionsBody');
+        if (el) el.innerHTML = '<div class="empty-state">Failed to load mentions</div>';
+      }
+    }
+
+    async function flagMention(id, flag) {
+      await api('/mentions/' + id + '/flag', { method: 'POST', body: JSON.stringify({ flagged: flag }) });
+      loadMentions();
+      loadMentionStats();
+    }
+
+    async function reviewMention(id) {
+      await api('/mentions/' + id + '/review', { method: 'POST' });
+      loadMentions();
+      loadMentionStats();
     }
 
     // ─── Helpers ────────────────────────────

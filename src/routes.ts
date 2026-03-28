@@ -85,6 +85,36 @@ export async function handlePublishRoutes(
     return handleEngage(request, env);
   }
 
+  // GET /mentions — listener feed (brand protection)
+  if (url.pathname === '/mentions' && request.method === 'GET') {
+    const authErr = requireAuth(request, env);
+    if (authErr) return authErr;
+    return handleMentions(request, env);
+  }
+
+  // POST /mentions/:id/flag — flag a mention for attention
+  if (url.pathname.match(/^\/mentions\/[^/]+\/flag$/) && request.method === 'POST') {
+    const authErr = requireAuth(request, env);
+    if (authErr) return authErr;
+    const id = url.pathname.split('/')[2];
+    return handleFlagMention(id, request, env);
+  }
+
+  // POST /mentions/:id/review — mark a mention as reviewed
+  if (url.pathname.match(/^\/mentions\/[^/]+\/review$/) && request.method === 'POST') {
+    const authErr = requireAuth(request, env);
+    if (authErr) return authErr;
+    const id = url.pathname.split('/')[2];
+    return handleReviewMention(id, env);
+  }
+
+  // GET /mentions/stats — sentiment summary stats
+  if (url.pathname === '/mentions/stats' && request.method === 'GET') {
+    const authErr = requireAuth(request, env);
+    if (authErr) return authErr;
+    return handleMentionStats(env);
+  }
+
   // GET /feed/:platform — get recent posts
   if (url.pathname.startsWith('/feed/') && request.method === 'GET') {
     const authErr = requireAuth(request, env);
@@ -332,6 +362,96 @@ async function handleFeed(platform: string, request: Request, env: Env): Promise
     const msg = err instanceof Error ? err.message : String(err);
     return jsonResponse({ error: msg }, 500);
   }
+}
+
+// ─── GET /mentions ───────────────────────────────────────────
+
+async function handleMentions(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const platform = url.searchParams.get('platform');
+  const sentiment = url.searchParams.get('sentiment'); // 'positive' | 'negative'
+  const flagged = url.searchParams.get('flagged');      // '1' for flagged only
+  const unreviewed = url.searchParams.get('unreviewed'); // '1' for unreviewed only
+  const limit = Math.min(Number(url.searchParams.get('limit') ?? 50), 200);
+
+  let query = 'SELECT * FROM mentions WHERE 1=1';
+  const binds: (string | number)[] = [];
+
+  if (platform) { query += ' AND platform = ?'; binds.push(platform); }
+  if (sentiment) { query += ' AND sentiment_label = ?'; binds.push(sentiment); }
+  if (flagged === '1') { query += ' AND flagged = 1'; }
+  if (unreviewed === '1') { query += ' AND reviewed = 0'; }
+
+  query += ' ORDER BY created_at DESC LIMIT ?';
+  binds.push(limit);
+
+  const result = await env.DB.prepare(query).bind(...binds).all();
+
+  return jsonResponse({
+    items: result.results,
+    count: result.results.length,
+  });
+}
+
+// ─── POST /mentions/:id/flag ─────────────────────────────────
+
+async function handleFlagMention(id: string, request: Request, env: Env): Promise<Response> {
+  let body: { flagged?: boolean; notes?: string } = {};
+  try { body = await request.json(); } catch { /* default to toggle on */ }
+
+  const flagValue = body.flagged === false ? 0 : 1;
+
+  await env.DB.prepare(
+    `UPDATE mentions SET flagged = ?, notes = COALESCE(?, notes) WHERE id = ?`
+  ).bind(flagValue, body.notes ?? null, id).run();
+
+  return jsonResponse({ id, flagged: flagValue === 1 });
+}
+
+// ─── POST /mentions/:id/review ───────────────────────────────
+
+async function handleReviewMention(id: string, env: Env): Promise<Response> {
+  await env.DB.prepare(
+    `UPDATE mentions SET reviewed = 1 WHERE id = ?`
+  ).bind(id).run();
+
+  return jsonResponse({ id, reviewed: true });
+}
+
+// ─── GET /mentions/stats ─────────────────────────────────────
+
+async function handleMentionStats(env: Env): Promise<Response> {
+  const [totals, sentiment, platforms, recent] = await Promise.all([
+    env.DB.prepare(`
+      SELECT COUNT(*) as total,
+        SUM(CASE WHEN flagged = 1 THEN 1 ELSE 0 END) as flagged,
+        SUM(CASE WHEN reviewed = 0 THEN 1 ELSE 0 END) as unreviewed
+      FROM mentions
+    `).first<{ total: number; flagged: number; unreviewed: number }>(),
+
+    env.DB.prepare(`
+      SELECT sentiment_label, COUNT(*) as count, AVG(sentiment_normalized) as avg_score
+      FROM mentions GROUP BY sentiment_label
+    `).all<{ sentiment_label: string; count: number; avg_score: number }>(),
+
+    env.DB.prepare(`
+      SELECT platform, COUNT(*) as count FROM mentions GROUP BY platform
+    `).all<{ platform: string; count: number }>(),
+
+    env.DB.prepare(`
+      SELECT COUNT(*) as count, AVG(sentiment_normalized) as avg_score
+      FROM mentions WHERE created_at > datetime('now', '-24 hours')
+    `).first<{ count: number; avg_score: number }>(),
+  ]);
+
+  return jsonResponse({
+    total: totals?.total ?? 0,
+    flagged: totals?.flagged ?? 0,
+    unreviewed: totals?.unreviewed ?? 0,
+    sentiment: sentiment.results,
+    platforms: platforms.results,
+    last_24h: recent,
+  });
 }
 
 // ─── Helpers ─────────────────────────────────────────────────

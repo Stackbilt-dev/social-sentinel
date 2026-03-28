@@ -57,3 +57,28 @@ CREATE TABLE IF NOT EXISTS engagement_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_el_tenant ON engagement_log(tenant_id, created_at);
+
+-- Mentions — processed social mentions with sentiment (brand protection listener)
+CREATE TABLE IF NOT EXISTS mentions (
+  id TEXT PRIMARY KEY,                   -- Platform-specific unique ID
+  tenant_id TEXT NOT NULL,
+  platform TEXT NOT NULL,                -- 'twitter', 'google_reviews', 'facebook', 'bluesky'
+  text TEXT NOT NULL,                    -- PII-redacted text
+  author TEXT,                           -- Redacted author name
+  url TEXT,                              -- Link to original post/review
+  rating INTEGER,                        -- 1-5 for reviews (NULL for tweets/posts)
+  sentiment_label TEXT,                  -- 'positive', 'negative'
+  sentiment_score REAL,                  -- Raw confidence 0.0-1.0
+  sentiment_normalized REAL,             -- Normalized -1.0 to +1.0
+  pii_detected TEXT,                     -- JSON array of PII types found
+  reviewed INTEGER NOT NULL DEFAULT 0,   -- 0=unreviewed, 1=reviewed
+  flagged INTEGER NOT NULL DEFAULT 0,    -- 0=normal, 1=flagged for attention
+  notes TEXT,                            -- Operator notes
+  detected_at TEXT NOT NULL,             -- Original mention timestamp
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_mentions_tenant ON mentions(tenant_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_mentions_platform ON mentions(platform, created_at);
+CREATE INDEX IF NOT EXISTS idx_mentions_sentiment ON mentions(sentiment_label, sentiment_normalized);
+CREATE INDEX IF NOT EXISTS idx_mentions_flagged ON mentions(flagged, reviewed);

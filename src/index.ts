@@ -137,12 +137,44 @@ async function processTenant(tenant: TenantConfig, env: Env): Promise<void> {
   const sentiments = await analyzer.analyzeBatch(cleanMentions.map((m) => m.text));
   console.log(`Analyzed sentiment for ${sentiments.length} mentions`);
 
-  // 4. Build ingest events
+  // 4. Store mentions in D1 for the dashboard listener
+  try {
+    const stmts = cleanMentions.map((m, i) => {
+      const s = sentiments[i];
+      return env.DB.prepare(`
+        INSERT OR IGNORE INTO mentions (id, tenant_id, platform, text, url, rating, sentiment_label, sentiment_score, sentiment_normalized, pii_detected, detected_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        m.id,
+        tenant.tenantId,
+        m.platform,
+        m.text,
+        m.url ?? null,
+        m.rating ?? null,
+        s.label,
+        s.score,
+        s.normalizedScore,
+        m.piiDetected.length > 0 ? JSON.stringify(m.piiDetected) : null,
+        new Date(m.timestamp).toISOString(),
+      );
+    });
+
+    // D1 batch limit is 100 statements
+    for (let i = 0; i < stmts.length; i += 100) {
+      await env.DB.batch(stmts.slice(i, i + 100));
+    }
+    console.log(`Stored ${cleanMentions.length} mentions in D1`);
+  } catch (err) {
+    // D1 storage is best-effort — don't block the ingest pipeline
+    console.error('Failed to store mentions in D1:', err instanceof Error ? err.message : err);
+  }
+
+  // 5. Build ingest events
   for (let i = 0; i < cleanMentions.length; i++) {
     builder.addMention(cleanMentions[i], sentiments[i], tenant.tenantId, tenant.stage);
   }
 
-  // 5. Send batches to ingestion endpoint
+  // 6. Send batches to ingestion endpoint
   const batches = builder.getBatches(100);
   console.log(`Sending ${batches.length} batches to ingestion endpoint`);
 
