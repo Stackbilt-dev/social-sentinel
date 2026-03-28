@@ -38,7 +38,7 @@ export class SentimentAnalyzer {
     const truncated = text.length > 500 ? text.slice(0, 500) + "..." : text;
 
     try {
-      const response = await this.ai.run(this.model as keyof AiModels, { text: truncated });
+      const response = await this.ai.run(this.model, { text: truncated });
 
       // Workers AI returns array of results sorted by confidence
       const results = response as AITextClassificationResult[];

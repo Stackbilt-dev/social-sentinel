@@ -13,14 +13,7 @@ INGEST_ENDPOINT_URL = "https://your-ingestion-endpoint.example.com"
 binding = "TENANT_CONFIG"
 # Create a KV namespace with: wrangler kv:namespace create TENANT_CONFIG
 # Then replace this placeholder with the returned namespace ID
-id = "d267d174fa12457b9c094c3115742272"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "social-sentinel"
-# Create with: wrangler d1 create social-sentinel
-# Then replace with the returned database ID
-database_id = "4eaf5ab3-dc53-4a14-b276-092320b68eff"
+id = "placeholder-create-with-wrangler"
 
 [ai]
 binding = "AI"

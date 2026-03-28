@@ -5,12 +5,9 @@ export interface Env {
   // Workers AI binding
   AI: Ai;
 
-  // D1 database for content queue + publish history
-  DB: D1Database;
-
-  // Downstream ingestion endpoint URL (monitoring pipeline)
+  // Downstream ingestion endpoint URL
   INGEST_ENDPOINT_URL: string;
 
-  // API key for manual trigger + publish endpoints (required)
+  // API key for manual trigger endpoint (optional - if not set, /trigger is disabled)
   TRIGGER_API_KEY?: string;
 }
