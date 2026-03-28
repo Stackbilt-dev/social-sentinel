@@ -15,5 +15,12 @@ binding = "TENANT_CONFIG"
 # Then replace this placeholder with the returned namespace ID
 id = "placeholder-create-with-wrangler"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "social-sentinel"
+# Create with: wrangler d1 create social-sentinel
+# Then replace with the returned database ID
+database_id = "placeholder-create-with-wrangler"
+
 [ai]
 binding = "AI"

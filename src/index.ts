@@ -1,5 +1,5 @@
 import type { Env } from "./env";
-import { loadTenantConfigs, type TenantConfig } from "./config";
+import { loadTenantConfigs, loadPublisherCredentials, type TenantConfig } from "./config";
 import { PIIRedactor } from "./pii/redactor";
 import { SentimentAnalyzer } from "./sentiment/analyzer";
 import { BatchBuilder } from "./batch/builder";
@@ -8,6 +8,11 @@ import { GoogleReviewsAdapter } from "./adapters/google-reviews";
 import { FacebookAdapter } from "./adapters/facebook";
 import type { PlatformAdapter, SocialMention, CleanMention } from "./adapters/types";
 import { logError, logPIIDetection } from "./utils/logging";
+import { handlePublishRoutes } from "./routes";
+import { BlueskyPublisher } from "./publishers/bluesky";
+import type { Platform } from "./publishers/types";
+
+// ─── Monitoring Pipeline (existing) ──────────────────────────
 
 /**
  * Get enabled adapters for a tenant based on their configuration
@@ -115,7 +120,6 @@ async function processTenant(tenant: TenantConfig, env: Env): Promise<void> {
         adapter: adapter.name,
         tenantId: tenant.tenantId,
       });
-      // Continue with other adapters
     }
   }
 
@@ -148,9 +152,108 @@ async function processTenant(tenant: TenantConfig, env: Env): Promise<void> {
   console.log(`Completed processing for tenant ${tenant.tenantId}`);
 }
 
+// ─── Publishing Pipeline (new) ───────────────────────────────
+
+const publishers: Record<string, BlueskyPublisher> = {
+  bluesky: new BlueskyPublisher(),
+};
+
+/**
+ * Process scheduled posts that are due for publishing.
+ * Runs on every cron cycle — checks content_queue for due items.
+ */
+async function processScheduledPublishing(env: Env): Promise<void> {
+  const due = await env.DB.prepare(`
+    SELECT id, tenant_id, platform, content, media_url, media_alt, link_url, retry_count, max_retries
+    FROM content_queue
+    WHERE status = 'scheduled' AND scheduled_at <= datetime('now')
+    ORDER BY scheduled_at ASC
+    LIMIT 10
+  `).all<{
+    id: string; tenant_id: string; platform: string; content: string;
+    media_url: string | null; media_alt: string | null; link_url: string | null;
+    retry_count: number; max_retries: number;
+  }>();
+
+  if (due.results.length === 0) return;
+
+  console.log(`[publisher] ${due.results.length} scheduled post(s) due`);
+
+  for (const post of due.results) {
+    const publisher = publishers[post.platform];
+    if (!publisher) {
+      console.error(`[publisher] Unknown platform: ${post.platform}`);
+      await env.DB.prepare(`
+        UPDATE content_queue SET status = 'failed', error = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).bind(`Unsupported platform: ${post.platform}`, post.id).run();
+      continue;
+    }
+
+    // Mark as publishing to prevent double-processing
+    await env.DB.prepare(
+      `UPDATE content_queue SET status = 'publishing', updated_at = datetime('now') WHERE id = ?`
+    ).bind(post.id).run();
+
+    const start = Date.now();
+
+    try {
+      const credentials = await loadPublisherCredentials(
+        env.TENANT_CONFIG, post.tenant_id, post.platform as Platform,
+      );
+
+      const result = await publisher.publish({
+        text: post.content,
+        imageUrl: post.media_url ?? undefined,
+        imageAlt: post.media_alt ?? undefined,
+        linkUrl: post.link_url ?? undefined,
+      }, credentials);
+
+      const durationMs = Date.now() - start;
+
+      await env.DB.batch([
+        env.DB.prepare(`
+          UPDATE content_queue SET status = 'published', published_at = datetime('now'),
+            post_url = ?, post_id = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `).bind(result.url, result.id, post.id),
+
+        env.DB.prepare(`
+          INSERT INTO publish_history (id, queue_id, tenant_id, platform, content, post_url, post_id, action, status, duration_ms)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'publish', 'success', ?)
+        `).bind(crypto.randomUUID(), post.id, post.tenant_id, post.platform, post.content, result.url, result.id, durationMs),
+      ]);
+
+      console.log(`[publisher] Published ${post.platform}: ${result.url}`);
+    } catch (err) {
+      const durationMs = Date.now() - start;
+      const msg = err instanceof Error ? err.message : String(err);
+      const newRetryCount = post.retry_count + 1;
+      const finalStatus = newRetryCount >= post.max_retries ? 'failed' : 'scheduled';
+
+      await env.DB.batch([
+        env.DB.prepare(`
+          UPDATE content_queue SET status = ?, error = ?, retry_count = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `).bind(finalStatus, msg, newRetryCount, post.id),
+
+        env.DB.prepare(`
+          INSERT INTO publish_history (id, queue_id, tenant_id, platform, content, action, status, error, duration_ms)
+          VALUES (?, ?, ?, ?, ?, 'publish', 'failed', ?, ?)
+        `).bind(crypto.randomUUID(), post.id, post.tenant_id, post.platform, post.content, msg, durationMs),
+      ]);
+
+      console.error(`[publisher] Failed ${post.id} (attempt ${newRetryCount}/${post.max_retries}): ${msg}`);
+    }
+  }
+}
+
+// ─── Worker Entry Point ──────────────────────────────────────
+
 export default {
   /**
-   * Cron trigger handler - runs every 15 minutes
+   * Cron trigger handler — runs every 15 minutes
+   * Handles both monitoring (mentions) and publishing (scheduled posts)
    */
   async scheduled(
     event: ScheduledEvent,
@@ -159,11 +262,11 @@ export default {
   ): Promise<void> {
     console.log(`Social Sentinel cron triggered at ${new Date(event.scheduledTime).toISOString()}`);
 
+    // 1. Monitoring pipeline — process mentions from all tenants
     try {
       const tenants = await loadTenantConfigs(env.TENANT_CONFIG);
       console.log(`Loaded ${tenants.length} tenant configurations`);
 
-      // Process each tenant concurrently using waitUntil
       for (const tenant of tenants) {
         ctx.waitUntil(
           processTenant(tenant, env).catch((error) => {
@@ -174,55 +277,58 @@ export default {
         );
       }
     } catch (error) {
-      logError("cron_failed", error);
-      throw error;
+      logError("cron_monitoring_failed", error);
     }
+
+    // 2. Publishing pipeline — publish scheduled posts
+    ctx.waitUntil(
+      processScheduledPublishing(env).catch((error) => {
+        logError("cron_publishing_failed", error);
+      })
+    );
   },
 
   /**
-   * HTTP handler for manual triggers and health checks
+   * HTTP handler for API endpoints, health checks, and manual triggers
    */
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    // Health check - public endpoint
+    // Health check — public endpoint
     if (url.pathname === "/health") {
-      return new Response(JSON.stringify({ status: "ok", timestamp: Date.now() }), {
+      return new Response(JSON.stringify({
+        status: "ok",
+        version: "2.0.0",
+        capabilities: ["monitoring", "publishing"],
+        timestamp: Date.now(),
+      }), {
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // Manual trigger - requires authentication
+    // Publishing routes — /publish, /schedule, /drafts, /history, /engage, /feed
+    const publishResponse = await handlePublishRoutes(request, env, url);
+    if (publishResponse) return publishResponse;
+
+    // Manual trigger — requires authentication (monitoring)
     if (url.pathname === "/trigger" && request.method === "POST") {
-      // Check if trigger endpoint is enabled
       if (!env.TRIGGER_API_KEY) {
         return new Response(
           JSON.stringify({ error: "Manual trigger is disabled" }),
-          {
-            status: 403,
-            headers: { "Content-Type": "application/json" },
-          }
+          { status: 403, headers: { "Content-Type": "application/json" } }
         );
       }
 
-      // Validate API key
       const authHeader = request.headers.get("Authorization");
-      const expectedAuth = `Bearer ${env.TRIGGER_API_KEY}`;
-
-      if (authHeader !== expectedAuth) {
+      if (authHeader !== `Bearer ${env.TRIGGER_API_KEY}`) {
         return new Response(
           JSON.stringify({ error: "Unauthorized" }),
-          {
-            status: 401,
-            headers: { "Content-Type": "application/json" },
-          }
+          { status: 401, headers: { "Content-Type": "application/json" } }
         );
       }
 
-      // Process tenants
       try {
         const tenants = await loadTenantConfigs(env.TENANT_CONFIG);
-
         for (const tenant of tenants) {
           ctx.waitUntil(processTenant(tenant, env));
         }
@@ -235,10 +341,7 @@ export default {
         logError("manual_trigger_failed", error);
         return new Response(
           JSON.stringify({ error: "Failed to trigger processing" }),
-          {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-          }
+          { status: 500, headers: { "Content-Type": "application/json" } }
         );
       }
     }

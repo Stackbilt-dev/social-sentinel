@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Platform, PublisherCredentials } from "./publishers/types";
 
 /**
  * Twitter/X platform configuration
@@ -75,4 +76,57 @@ export async function loadTenantConfigs(kv: KVNamespace): Promise<TenantConfig[]
   }
 
   return configs;
+}
+
+// ─── Publisher Credentials ───────────────────────────────────
+
+/**
+ * Publisher credential schema — stored per-tenant in KV
+ * Key format: `{tenantId}:publishers`
+ */
+export const PublisherCredentialsSchema = z.object({
+  bluesky: z.object({
+    handle: z.string().min(1),
+    appPassword: z.string().min(1),
+  }).optional(),
+  twitter: z.object({
+    apiKey: z.string().min(1),
+    apiSecret: z.string().min(1),
+    accessToken: z.string().min(1),
+    accessTokenSecret: z.string().min(1),
+  }).optional(),
+  facebook: z.object({
+    pageAccessToken: z.string().min(1),
+    pageId: z.string().min(1),
+  }).optional(),
+});
+
+export type PublisherCredentialsConfig = z.infer<typeof PublisherCredentialsSchema>;
+
+/**
+ * Load publisher credentials for a specific tenant and platform from KV.
+ * Credentials are stored under key `{tenantId}:publishers`.
+ */
+export async function loadPublisherCredentials(
+  kv: KVNamespace,
+  tenantId: string,
+  platform: Platform,
+): Promise<PublisherCredentials> {
+  const raw = await kv.get(`${tenantId}:publishers`);
+  if (!raw) {
+    throw new Error(`No publisher credentials found for tenant ${tenantId}`);
+  }
+
+  const parsed = PublisherCredentialsSchema.safeParse(JSON.parse(raw));
+  if (!parsed.success) {
+    throw new Error(`Invalid publisher credentials for tenant ${tenantId}: ${parsed.error.message}`);
+  }
+
+  const platformCreds = parsed.data[platform];
+  if (!platformCreds) {
+    throw new Error(`No ${platform} credentials configured for tenant ${tenantId}`);
+  }
+
+  // Flatten to PublisherCredentials (Record<string, string>)
+  return platformCreds as unknown as PublisherCredentials;
 }
