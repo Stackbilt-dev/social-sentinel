@@ -18,7 +18,7 @@
     "types": "wrangler types"
   },
   "dependencies": {
-    "@rollup/rollup-win32-x64-msvc": "^4.60.1",
+    "@rollup/rollup-win32-x64-msvc": "^4.60.2",
     "zod": "^3.22.4"
   },
   "devDependencies": {
